@@ -1,0 +1,3 @@
+﻿  main.cpp
+E:\Chat_App\Chat_CLient\main.cpp(39,47): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
+  Chat_CLient.vcxproj -> E:\Chat_App\Chat_CLient\x64\Debug\Chat_CLient.exe
