@@ -1,110 +1,126 @@
 #include<iostream>
 #include<WinSock2.h>
-#include<WS2tcpip.h>
+#include<ws2tcpip.h>
+#include<tchar.h>
 #include<thread>
+#include<vector>
 using namespace std;
 
 #pragma comment(lib, "ws2_32.lib")
 
-
 /*
-initialize winsock
+Intialize winsock library
 
-create socket
+Create the socket
 
-connect to the server
+get ip and port
 
-send/recv
+bind the ip/port with the socket
 
-close the socket
+listen on the socket
+
+accept
+
+
 
 */
 
 bool Intialize() {
 	WSADATA data;
 	return WSAStartup(MAKEWORD(2, 2), &data) == 0;
+
 }
 
+void InteractWithClient(SOCKET clientSocket, vector<SOCKET> clients){
+	//send rec client
 
-void SendMess(SOCKET s) {
-	cout << "Send your chat name : " << endl;
-	string name;
-	getline(cin, name);
-	string message;
+	cout << "Client connected" << endl;
 
-
-	while (1) {
-		getline(cin, message);
-		string msg = name + " : " + message;
-		int bytesent=send(s, msg.c_str(), msg.length(), 0);
-		if (bytesent == SOCKET_ERROR) {
-			cout << "Error  in Sending Message " << endl;
-			break;
-		}
-		if (message == "quit") {
-			cout << "Stopping the Application" << endl;
-		}
-
-	}
-	closesocket(s);
-	WSACleanup();
-}
-
-void RecvMess(SOCKET s) {
 	char buffer[4096];
-	int recvlen;
-	string msg = "";
 	while (1) {
-		recvlen = recv(s, buffer, sizeof(buffer), 0);
-		if (recvlen <= 0) {
-			cout << "Disconnected from the server" << endl;
+
+		int bytesrecv = recv(clientSocket, buffer, sizeof(buffer), 0);
+		if (bytesrecv <= 0) {
+			cout << "client disconnected" << endl;
 			break;
 		}
-		else {
-			msg = string(buffer, recvlen);
-			cout << msg << endl;
+		string message(buffer, bytesrecv);
+		cout << "message from client : " << message << endl;
+
+		for (auto client : clients) {
+			if(client != clientSocket){
+			send(client, message.c_str(), message.length(), 0);
+			}
 		}
 	}
-	closesocket(s);
-	WSACleanup();
-}
 
+	auto it = find(clients.begin(), clients.end(), clientSocket);
+	if (it != clients.end()){
+		clients.erase(it);
+	}
+
+	closesocket(clientSocket);
+}
 int main() {
 	if (!Intialize()) {
-		cout << "Intialize winsock failed" << endl;
+		cout << "winsock intialization failed" << endl;
 
+	}
+
+	cout << "server program" << endl;
+
+	SOCKET listenSocket = socket(AF_INET, SOCK_STREAM, 0); //1st para = addressing.AF_INET for IPv4, for IPv6 INET6 used, After define the protocol as a 2nd parameter here is TCP, 3rd parameter is 0
+
+	if (listenSocket == INVALID_SOCKET) {
+		cout << "Socket creation failed" << endl;
 		return 1;
 	}
 
-	SOCKET s;
-	s = socket(AF_INET, SOCK_STREAM, 0);
-	if (s == INVALID_SOCKET) {
-		cout << "invalid socket created" << endl;
-		return 1;
-	}
-
-	int port = 88888;
-	string serveraddress = "127.0.0.1";
+	//create address structure
+	int port = 88888; //it is a listening port
 	sockaddr_in serveraddr;
 	serveraddr.sin_family = AF_INET;
-	serveraddr.sin_port = htons(port);
-	inet_pton(AF_INET, serveraddress.c_str(), &(serveraddr.sin_addr));
+	serveraddr.sin_port = htons(88888);
 
-	if(connect(s, reinterpret_cast<sockaddr*>(&serveraddr), sizeof(serveraddr))== SOCKET_ERROR){
-		cout << "not able to connect to server" << endl;
-		cout << ": " << WSAGetLastError();
-		closesocket(s);
+	//convert the ipaddress (0.0.0.0) put inside the sin_family in binary form
+	if(InetPton(AF_INET, _T("0.0.0.0"), &serveraddr.sin_addr) != 1) {
+		cout << "setting address structure failed" << endl;
+		closesocket(listenSocket);
 		WSACleanup();
 		return 1;
 	}
 
-	cout << "successfully connected to server" << endl;
+	//bind
+	if (bind(listenSocket, reinterpret_cast<sockaddr*>(&serveraddr), sizeof(serveraddr))) {
+		cout << "bind failed" << endl;
+		closesocket(listenSocket);
+		WSACleanup();
+		return 1;
+	}
 
-	thread senderthread(SendMess, s);
-	thread reciever(RecvMess, s);
-
-	senderthread.join();
-	reciever.join();
-	return 0;
+	//Listen
+	if (listen(listenSocket, SOMAXCONN)==SOCKET_ERROR) {
+		cout << "listen failed" << endl;
+		closesocket(listenSocket);
+		WSACleanup();
+		return 1;
 	
+	} //2nd para takes the value that can the requests in a queue, SOMAXCONN is sin integer
+	cout << "server has started listening on port :" << port << endl;
+	vector<SOCKET> clients;
+	
+	while (1) {
+		//Accept
+		SOCKET clientsocket = accept(listenSocket, nullptr, nullptr); // Client address as 2nd parameter, and print address as 2rd para, but not required so write null
+		if (clientsocket == INVALID_SOCKET) {
+			cout << "Invalid Socket" << endl;
+		}
+		clients.push_back(clientsocket);
+		thread t1(InteractWithClient, clientsocket, std::ref(clients));
+		t1.detach();
+	}
+	closesocket(listenSocket);
+		
+	WSACleanup();
+	return 0;
 }
